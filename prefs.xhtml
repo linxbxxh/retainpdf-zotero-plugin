@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RetainPDF Translate 偏好设置面板（Zotero 7 / 9）
+  元素通过 preference="完整偏好名" 直接绑定，与 Zotero 9 偏好面板机制一致。
+-->
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml">
+
+  <groupbox>
+    <label>
+      <html:h2>RetainPDF 翻译</html:h2>
+    </label>
+    <html:p style="font-size: 12px; color: gray;">
+      依赖本机安装的 RetainPDF 桌面版（v4.1+）。插件调用其本地服务（默认 127.0.0.1:41000）完成
+      OCR → 翻译 → 排版渲染，并把生成的译文 PDF 自动挂到 Zotero 条目下。
+      凭证（OCR Token、模型 API Key）默认自动读取 RetainPDF 桌面配置，无需重复填写；
+      服务未启动时会尝试自动拉起 RetainPDF。
+    </html:p>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h3>基本</html:h3></label>
+    <checkbox native="true"
+              preference="extensions.retainpdf.auto"
+              label="新抓取条目的 PDF 自动翻译（关闭后仍可右键手动翻译）"/>
+    <checkbox native="true"
+              preference="extensions.retainpdf.skipExisting"
+              label="条目已有译文附件时跳过"/>
+    <hbox align="center">
+      <label control="retainpdf-attachTitle" style="min-width: 150px;">译文附件标题</label>
+      <html:input id="retainpdf-attachTitle" type="text"
+                  preference="extensions.retainpdf.attachTitle" style="flex: 1;"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-pageRanges" style="min-width: 150px;">翻译页码范围</label>
+      <html:input id="retainpdf-pageRanges" type="text"
+                  preference="extensions.retainpdf.pageRanges" style="flex: 1;"
+                  placeholder="留空 = 全部，例如 1-5 或 1,3,7"/>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h3>本地服务</html:h3></label>
+    <hbox align="center">
+      <label control="retainpdf-apiBase" style="min-width: 150px;">服务地址</label>
+      <html:input id="retainpdf-apiBase" type="text"
+                  preference="extensions.retainpdf.apiBase" style="flex: 1;"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-apiKey" style="min-width: 150px;">API Key</label>
+      <html:input id="retainpdf-apiKey" type="text"
+                  preference="extensions.retainpdf.apiKey" style="flex: 1;"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-exePath" style="min-width: 150px;">RetainPDF.exe 路径</label>
+      <html:input id="retainpdf-exePath" type="text"
+                  preference="extensions.retainpdf.exePath" style="flex: 1;"
+                  placeholder="留空 = 自动从注册表/常见路径查找"/>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h3>翻译参数覆盖（留空 = 使用 RetainPDF 桌面版配置）</html:h3></label>
+    <hbox align="center">
+      <label control="retainpdf-model" style="min-width: 150px;">模型名称</label>
+      <html:input id="retainpdf-model" type="text"
+                  preference="extensions.retainpdf.model" style="flex: 1;"
+                  placeholder="例如 deepseek-v4-flash"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-baseUrl" style="min-width: 150px;">模型接口地址</label>
+      <html:input id="retainpdf-baseUrl" type="text"
+                  preference="extensions.retainpdf.baseUrl" style="flex: 1;"
+                  placeholder="例如 https://api.deepseek.com/v1"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-modelApiKey" style="min-width: 150px;">模型 API Key</label>
+      <html:input id="retainpdf-modelApiKey" type="text"
+                  preference="extensions.retainpdf.modelApiKey" style="flex: 1;"
+                  placeholder="留空 = 读取 RetainPDF 桌面配置"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-ocrProvider" style="min-width: 150px;">OCR Provider</label>
+      <html:input id="retainpdf-ocrProvider" type="text"
+                  preference="extensions.retainpdf.ocrProvider" style="flex: 1;"
+                  placeholder="paddle / mineru / vision（留空 = 读取桌面配置）"/>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h3>高级</html:h3></label>
+    <hbox align="center">
+      <label control="retainpdf-pollInterval" style="min-width: 150px;">轮询间隔（秒）</label>
+      <html:input id="retainpdf-pollInterval" type="number" min="1" max="60"
+                  preference="extensions.retainpdf.pollInterval" style="width: 90px;"/>
+    </hbox>
+    <hbox align="center">
+      <label control="retainpdf-jobTimeout" style="min-width: 150px;">任务超时（秒）</label>
+      <html:input id="retainpdf-jobTimeout" type="number" min="60" max="21600"
+                  preference="extensions.retainpdf.jobTimeout" style="width: 90px;"/>
+    </hbox>
+  </groupbox>
+</vbox>

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "RetainPDF Translate",
+  "version": "1.0.7",
+  "description": "用 RetainPDF 本地服务自动翻译新抓取的 PDF 全文，并把译文 PDF 挂到对应条目下。",
+  "author": "linxbxxh",
+  "homepage_url": "https://github.com/linxbxxh/retainpdf-zotero-plugin",
+  "applications": {
+    "zotero": {
+      "id": "retainpdf-translate@zcode.local",
+      "update_url": "https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/update.json",
+      "strict_min_version": "6.999",
+      "strict_max_version": "10.9.9"
+    }
+  },
+  "prefs": [
+    "extensions.retainpdf.auto",
+    "extensions.retainpdf.apiBase",
+    "extensions.retainpdf.apiKey",
+    "extensions.retainpdf.attachTitle",
+    "extensions.retainpdf.skipExisting",
+    "extensions.retainpdf.pageRanges",
+    "extensions.retainpdf.ocrProvider",
+    "extensions.retainpdf.model",
+    "extensions.retainpdf.baseUrl",
+    "extensions.retainpdf.modelApiKey",
+    "extensions.retainpdf.exePath",
+    "extensions.retainpdf.jobTimeout",
+    "extensions.retainpdf.pollInterval"
+  ]
+}

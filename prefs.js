@@ -1,0 +1,13 @@
+pref("extensions.retainpdf.auto", true);
+pref("extensions.retainpdf.apiBase", "http://127.0.0.1:41000");
+pref("extensions.retainpdf.apiKey", "retain-pdf-desktop");
+pref("extensions.retainpdf.attachTitle", "中文翻译 (RetainPDF)");
+pref("extensions.retainpdf.skipExisting", true);
+pref("extensions.retainpdf.pageRanges", "");
+pref("extensions.retainpdf.ocrProvider", "");
+pref("extensions.retainpdf.model", "");
+pref("extensions.retainpdf.baseUrl", "");
+pref("extensions.retainpdf.modelApiKey", "");
+pref("extensions.retainpdf.exePath", "");
+pref("extensions.retainpdf.jobTimeout", 1800);
+pref("extensions.retainpdf.pollInterval", 3);
