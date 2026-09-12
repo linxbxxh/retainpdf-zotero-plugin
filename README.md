@@ -52,8 +52,10 @@ irm https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/inst
 ## 功能
 
 - **自动翻译**：条目新增 PDF 附件时自动触发（可在设置里关闭）
+- **双输出**：翻译完成后自动挂两个附件——**「中文翻译」**（A4，中文覆盖层）和
+  **「中英对照」**（A3 横版，左页原文右页译文），对照版可在设置里关闭
 - **右键手动翻译**：选中一个或多个条目 → 右键 →「RetainPDF 翻译全文并挂到条目」
-- **去重**：条目下已有译文附件（标题匹配「中文翻译 (RetainPDF)」）时自动跳过
+- **去重**：条目下已有同名译文附件时自动跳过
 - **零配置凭证**：OCR Token、模型 API Key 自动读取 RetainPDF 桌面配置，可覆盖
 - **自动拉起服务**：本地 API（127.0.0.1:41000）没启动时自动启动 RetainPDF.exe
 - 翻译进度实时显示在 Zotero 右下角
@@ -65,6 +67,8 @@ irm https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/inst
 | 新抓取 PDF 自动翻译 | 开 | 关闭后只能右键手动翻译 |
 | 已有译文时跳过 | 开 | 按附件标题判断 |
 | 译文附件标题 | 中文翻译 (RetainPDF) | 同时用于去重判断 |
+| 同时添加中英对照版 PDF | 开 | A3 横版，左原文右译文 |
+| 对照附件标题 | 中英对照 (RetainPDF) | 对照版附件的标题 |
 | 翻译页码范围 | 空（全部） | 例如 `1-5` 或 `1,3,7` |
 | 服务地址 | http://127.0.0.1:41000 | RetainPDF 本地 API |
 | API Key | retain-pdf-desktop | RetainPDF 桌面版内置 key |

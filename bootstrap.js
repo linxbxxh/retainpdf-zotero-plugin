@@ -332,6 +332,17 @@ async function downloadTranslatedPdf(base, key, jobId) {
   return new Uint8Array(xhr2.response);
 }
 
+async function downloadSideBySidePdf(base, key, jobId) {
+  const xhr = await apiRequest({
+    url: base + "/api/v1/jobs/" + jobId + "/pdf/side-by-side",
+    headers: authHeaders(key), responseType: "arraybuffer", timeoutMs: 600000,
+  });
+  if (xhr.status !== 200 || !xhr.response || xhr.response.byteLength === 0) {
+    throw new Error("下载中英对照 PDF 失败: HTTP " + xhr.status);
+  }
+  return new Uint8Array(xhr.response);
+}
+
 /* ---------- core translation flow ---------- */
 
 function sanitizeFilename(s) {
@@ -458,6 +469,27 @@ async function translateItem(job) {
       contentType: "application/pdf",
     });
     IOUtils.remove(tmpPath, { ignoreMissing: true }).catch(() => {});
+
+    // 中英对照版（A3 横版，左原文右译文）
+    const dualTitle = prefChar("dualTitle", "中英对照 (RetainPDF)");
+    if (prefBool("attachDual", true) && !hasTranslatedAttachment(parent, dualTitle)) {
+      prog.setText("下载中英对照…");
+      try {
+        const dualBytes = await downloadSideBySidePdf(base, key, jobId);
+        const dualPath = PathUtils.join(tmpDir, "zh.dual_" + stem + ".pdf");
+        await IOUtils.write(dualPath, dualBytes);
+        await Zotero.Attachments.importFromFile({
+          file: dualPath,
+          parentItemID: parent.id,
+          title: dualTitle,
+          contentType: "application/pdf",
+        });
+        IOUtils.remove(dualPath, { ignoreMissing: true }).catch(() => {});
+      } catch (e) {
+        // 对照版失败不影响主译文
+        Zotero.logError(e);
+      }
+    }
     IOUtils.remove(tmpDir, { recursive: true, ignoreMissing: true }).catch(() => {});
 
     prog.setProgress(100);

@@ -31,6 +31,14 @@
       <html:input id="retainpdf-attachTitle" type="text"
                   preference="extensions.retainpdf.attachTitle" style="flex: 1;"/>
     </hbox>
+    <checkbox native="true"
+              preference="extensions.retainpdf.attachDual"
+              label="同时添加中英对照版 PDF（A3 横版，左原文右译文）"/>
+    <hbox align="center">
+      <label control="retainpdf-dualTitle" style="min-width: 150px;">对照附件标题</label>
+      <html:input id="retainpdf-dualTitle" type="text"
+                  preference="extensions.retainpdf.dualTitle" style="flex: 1;"/>
+    </hbox>
     <hbox align="center">
       <label control="retainpdf-pageRanges" style="min-width: 150px;">翻译页码范围</label>
       <html:input id="retainpdf-pageRanges" type="text"

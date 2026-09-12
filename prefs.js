@@ -2,6 +2,8 @@ pref("extensions.retainpdf.auto", true);
 pref("extensions.retainpdf.apiBase", "http://127.0.0.1:41000");
 pref("extensions.retainpdf.apiKey", "retain-pdf-desktop");
 pref("extensions.retainpdf.attachTitle", "中文翻译 (RetainPDF)");
+pref("extensions.retainpdf.attachDual", true);
+pref("extensions.retainpdf.dualTitle", "中英对照 (RetainPDF)");
 pref("extensions.retainpdf.skipExisting", true);
 pref("extensions.retainpdf.pageRanges", "");
 pref("extensions.retainpdf.ocrProvider", "");
