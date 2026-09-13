@@ -2,8 +2,8 @@
   "addons": {
     "retainpdf-translate@zcode.local": [
       {
-        "version": "1.0.9",
-        "update_link": "https://github.com/linxbxxh/retainpdf-zotero-plugin/releases/download/v1.0.9/RetainPDF-Translate-1.0.9.xpi"
+        "version": "1.1.0",
+        "update_link": "https://github.com/linxbxxh/retainpdf-zotero-plugin/releases/download/v1.1.0/RetainPDF-Translate-1.1.0.xpi"
       }
     ]
   }

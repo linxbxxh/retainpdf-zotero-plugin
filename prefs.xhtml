@@ -109,5 +109,13 @@
       <html:input id="retainpdf-jobTimeout" type="number" min="60" max="21600"
                   preference="extensions.retainpdf.jobTimeout" style="width: 90px;"/>
     </hbox>
+    <hbox align="center">
+      <label control="retainpdf-concurrency" style="min-width: 150px;">同时翻译篇数</label>
+      <html:input id="retainpdf-concurrency" type="number" min="1" max="6"
+                  preference="extensions.retainpdf.concurrency" style="width: 90px;"/>
+    </hbox>
+    <html:p style="font-size: 12px; color: gray;">
+      批量翻译时同时进行的任务数。调大会更快，但翻译期间内存占用和模型并发请求也会相应增加。
+    </html:p>
   </groupbox>
 </vbox>

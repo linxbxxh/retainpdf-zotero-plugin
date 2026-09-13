@@ -13,3 +13,4 @@ pref("extensions.retainpdf.modelApiKey", "");
 pref("extensions.retainpdf.exePath", "");
 pref("extensions.retainpdf.jobTimeout", 1800);
 pref("extensions.retainpdf.pollInterval", 3);
+pref("extensions.retainpdf.concurrency", 2);

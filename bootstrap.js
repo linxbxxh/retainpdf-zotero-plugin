@@ -23,7 +23,7 @@ var injectedNodes = new Map(); // window -> [elements]
 var queue = [];
 var queuedParents = new Set();
 var processingParents = new Set();
-var pumping = false;
+var pumpingCount = 0;
 var shuttingDown = false;
 var desktopConfigCache = null;
 var desktopConfigCachedAt = 0;
@@ -409,7 +409,7 @@ async function translateItem(job) {
   }
 
   const pw = new Zotero.ProgressWindow({ closeOnClick: false });
-  pw.changeHeadline("RetainPDF 翻译");
+  pw.changeHeadline("RetainPDF 翻译" + (queue.length > 0 ? "（队列中还有 " + queue.length + " 篇）" : ""));
   pw.show();
   const prog = new pw.ItemProgress(ICON, att.attachmentFilename || "PDF");
   prog.setProgress(1);
@@ -430,7 +430,17 @@ async function translateItem(job) {
 
     prog.setText("上传 PDF…");
     prog.setProgress(5);
-    const uploadId = await uploadPdf(base, key, pdfPath, filename);
+    let uploadId;
+    try {
+      uploadId = await uploadPdf(base, key, pdfPath, filename);
+    } catch (e) {
+      // 网络抖动等瞬时错误重试一次（413 等永久错误重试也只是多花几秒）
+      Zotero.debug("[retainpdf] upload failed once, retrying: " + (e.message || e));
+      prog.setText("上传失败，3 秒后重试…");
+      await sleep(3000);
+      if (shuttingDown) return;
+      uploadId = await uploadPdf(base, key, pdfPath, filename);
+    }
 
     prog.setText("提交翻译任务…");
     prog.setProgress(10);
@@ -450,7 +460,11 @@ async function translateItem(job) {
     let jobData = null;
     let status = "queued";
     while (Date.now() < deadline && !shuttingDown) {
-      await sleep(Math.max(1, prefInt("pollInterval", 3)) * 1000);
+      // 长任务轮询退避：1 分钟内用基础间隔，10 分钟内 ≥6 秒，之后 ≥12 秒
+      const baseInterval = Math.max(1, prefInt("pollInterval", 3));
+      const soFar = Math.round((Date.now() - startedAt) / 1000);
+      const interval = soFar < 60 ? baseInterval : soFar < 600 ? Math.max(baseInterval, 6) : Math.max(baseInterval, 12);
+      await sleep(interval * 1000);
       if (shuttingDown) return;
       try {
         const xhr = await apiRequest({
@@ -541,25 +555,29 @@ async function translateItem(job) {
 
 /* ---------- queue ---------- */
 
+const CONCURRENCY_CAP = 6;
+
+function concurrencyLimit() {
+  return Math.min(CONCURRENCY_CAP, Math.max(1, prefInt("concurrency", 2)));
+}
+
 async function pump() {
-  if (pumping || shuttingDown) return;
-  pumping = true;
-  try {
-    while (queue.length && !shuttingDown) {
-      const job = queue.shift();
-      // 出队即释放去重标记：任务失败后允许再次右键重试，
-      // 处理中的并发去重由 processingParents 负责
-      queuedParents.delete(job.parentItemID);
-      if (processingParents.has(job.parentItemID)) continue;
-      processingParents.add(job.parentItemID);
-      try {
-        await translateItem(job);
-      } finally {
+  if (shuttingDown) return;
+  while (pumpingCount < concurrencyLimit() && queue.length && !shuttingDown) {
+    const job = queue.shift();
+    // 出队即释放去重标记：任务失败后允许再次右键重试，
+    // 处理中的并发去重由 processingParents 负责
+    queuedParents.delete(job.parentItemID);
+    if (processingParents.has(job.parentItemID)) continue;
+    processingParents.add(job.parentItemID);
+    pumpingCount++;
+    translateItem(job)
+      .catch((e) => Zotero.logError(e))
+      .finally(() => {
+        pumpingCount--;
         processingParents.delete(job.parentItemID);
-      }
-    }
-  } finally {
-    pumping = false;
+        pump();
+      });
   }
 }
 

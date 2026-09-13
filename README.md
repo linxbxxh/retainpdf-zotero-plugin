@@ -55,6 +55,7 @@ irm https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/inst
 - **双输出**：翻译完成后自动挂两个附件——**「中文翻译」**（A4，中文覆盖层）和
   **「中英对照」**（A3 横版，左页原文右页译文），对照版可在设置里关闭
 - **右键手动翻译**：选中一个或多个条目 → 右键 →「RetainPDF 翻译全文并挂到条目」
+- **并发翻译**：批量翻译时默认 2 篇同时进行（可调 1–6），多篇文献不用干等
 - **右键重新翻译**：「RetainPDF 重新翻译（删除旧译文后重翻）」——把本插件生成的旧译文
   移入回收站后强制重翻，适合 PDF 更换了内容或想用新模型重出译文的场景
 - **去重**：条目下已有同名译文附件时自动跳过；插件自己的译文附件永远不会被当作翻译源
@@ -81,6 +82,7 @@ irm https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/inst
 | 模型名称 / 接口地址 / API Key | 空 | **留空 = 跟随 RetainPDF 桌面版配置**；填写则覆盖 |
 | OCR Provider | 空 | paddle / mineru / vision，留空跟随桌面配置 |
 | 轮询间隔 / 任务超时 | 3 秒 / 1800 秒 | 长文献可调大超时 |
+| 同时翻译篇数 | 2 | 批量翻译的并发数（1–6）；调大更快但更吃内存 |
 
 ## 常见问题
 
