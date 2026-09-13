@@ -140,7 +140,7 @@ async function findRetainPDFExe() {
   if (custom && await IOUtils.exists(custom)) return custom;
 
   const pf = envPath("ProgramFiles");
-  const pf86 = envPath("ProgramFiles(x86)") || envPath("ProgramFiles(x86)");
+  const pf86 = envPath("ProgramFiles(x86)");
   const localAppData = envPath("LocalAppData");
   const programData = envPath("ProgramData");
   const candidates = [];
@@ -148,7 +148,10 @@ async function findRetainPDFExe() {
     if (!root) continue;
     candidates.push(PathUtils.join(root, "RetainPDF", "RetainPDF.exe"));
     candidates.push(PathUtils.join(root, "Programs", "RetainPDF", "RetainPDF.exe"));
-    candidates.push(PathUtils.join(root, "retainPDF", "RetainPDF.exe"));
+  }
+  // 盘符扫描覆盖绿色安装（如 D:\retainPDF\RetainPDF.exe；NTFS 不区分大小写）
+  for (let i = 67; i <= 90; i++) { // C..Z
+    candidates.push(String.fromCharCode(i) + ":\\RetainPDF\\RetainPDF.exe");
   }
   for (const c of candidates) {
     try {
@@ -173,12 +176,19 @@ async function tryLaunchRetainPDF() {
 async function uploadPdf(base, key, filePath, fileName) {
   const data = await IOUtils.read(filePath);
   const name = fileName || filePath.split(/[\\/]/).pop();
+  // multipart 头部里的 filename 只保留安全字符，防止引号/换行破坏报文结构
+  const safeName = (name || "document.pdf").replace(/[\r\n"\\]/g, "_");
   const boundary = "----retainpdfzotero" + Date.now();
   const head = "--" + boundary
-    + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + name + "\""
+    + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + safeName + "\""
     + "\r\nContent-Type: application/pdf\r\n\r\n";
   const tail = "\r\n--" + boundary + "--\r\n";
-  const body = concatBytes([asciiBytes(head), data, asciiBytes(tail)]);
+  const headBytes = asciiBytes(head);
+  const tailBytes = asciiBytes(tail);
+  // Blob 按段引用、零拷贝拼接，避免大 PDF 在内存里再复制一份
+  const body = (typeof Blob === "function")
+    ? new Blob([headBytes, data, tailBytes])
+    : concatBytes([headBytes, data, tailBytes]);
   const xhr = await apiRequest({
     method: "POST",
     url: base + "/api/v1/uploads",
@@ -193,14 +203,23 @@ async function uploadPdf(base, key, filePath, fileName) {
 }
 
 async function resolveCredentials() {
-  const cfg = (await getDesktopConfig()) || {};
+  const prefModel = prefChar("model", "");
+  const prefBaseUrl = prefChar("baseUrl", "");
+  const prefApiKey = prefChar("modelApiKey", "");
+  const prefProvider = prefChar("ocrProvider", "");
+
+  // 模型三件套已在插件偏好里配齐时，不再依赖桌面配置（桌面配置损坏也能翻）
+  let cfg = {};
+  if (!(prefModel && prefBaseUrl && prefApiKey)) {
+    cfg = (await getDesktopConfig()) || {};
+  }
   const dev = cfg.developerConfig || {};
 
-  const model = prefChar("model", "") || dev.model || cfg.model || "deepseek-v4-flash";
-  const baseUrl = prefChar("baseUrl", "") || dev.baseUrl || cfg.baseUrl || "https://api.deepseek.com/v1";
-  const modelApiKey = prefChar("modelApiKey", "") || cfg.modelApiKey || "";
+  const model = prefModel || dev.model || cfg.model || "deepseek-v4-flash";
+  const baseUrl = prefBaseUrl || dev.baseUrl || cfg.baseUrl || "https://api.deepseek.com/v1";
+  const modelApiKey = prefApiKey || cfg.modelApiKey || "";
 
-  const provider = (prefChar("ocrProvider", "") || cfg.ocrProvider || "paddle").toLowerCase();
+  const provider = (prefProvider || cfg.ocrProvider || "paddle").toLowerCase();
   let token = "";
   let tokenField = "paddle_token";
   if (provider === "mineru") {
@@ -419,19 +438,36 @@ async function translateItem(job) {
     if (!creds.modelApiKey) {
       throw new Error("未找到翻译模型 API Key：请先在 RetainPDF 桌面版里完成接口设置，或在插件设置中手动填写。");
     }
+    if (!creds.token) {
+      throw new Error("未找到 OCR 凭证（provider=" + creds.provider + "）：请先在 RetainPDF 桌面版完成 OCR 设置，或在插件设置中指定 OCR Provider。");
+    }
     const jobId = await submitJob(base, key, uploadId, creds, timeoutSeconds);
 
     const startedAt = Date.now();
     const deadline = startedAt + timeoutSeconds * 1000;
+    const POLL_MAX_FAILS = 10;
+    let pollFails = 0;
     let jobData = null;
     let status = "queued";
     while (Date.now() < deadline && !shuttingDown) {
       await sleep(Math.max(1, prefInt("pollInterval", 3)) * 1000);
       if (shuttingDown) return;
-      const xhr = await apiRequest({
-        url: base + "/api/v1/jobs/" + jobId, headers: authHeaders(key), timeoutMs: 30000,
-      });
-      jobData = unwrapEnvelope(JSON.parse(xhr.responseText));
+      try {
+        const xhr = await apiRequest({
+          url: base + "/api/v1/jobs/" + jobId, headers: authHeaders(key), timeoutMs: 30000,
+        });
+        jobData = unwrapEnvelope(JSON.parse(xhr.responseText));
+        pollFails = 0;
+      } catch (e) {
+        // 后端瞬时抖动（500/超时等）不应判死整个翻译任务
+        pollFails++;
+        Zotero.debug("[retainpdf] poll failed " + pollFails + "/" + POLL_MAX_FAILS + ": " + (e.message || e));
+        if (pollFails >= POLL_MAX_FAILS) {
+          throw new Error("轮询任务状态连续失败 " + pollFails + " 次，放弃监控 (job_id=" + jobId + ")");
+        }
+        prog.setText("轮询暂时失败，正在重试 (" + pollFails + "/" + POLL_MAX_FAILS + ")…");
+        continue;
+      }
       status = jobData.status || "unknown";
       const elapsed = Math.round((Date.now() - startedAt) / 1000);
       prog.setText(stageText(jobData, elapsed));
@@ -470,9 +506,10 @@ async function translateItem(job) {
     });
     IOUtils.remove(tmpPath, { ignoreMissing: true }).catch(() => {});
 
-    // 中英对照版（A3 横版，左原文右译文）
+    // 中英对照版（A3 横版，左原文右译文）；去重跟随 skipExisting 语义
     const dualTitle = prefChar("dualTitle", "中英对照 (RetainPDF)");
-    if (prefBool("attachDual", true) && !hasTranslatedAttachment(parent, dualTitle)) {
+    const dualDeduped = prefBool("skipExisting", true) && hasTranslatedAttachment(parent, dualTitle);
+    if (prefBool("attachDual", true) && !dualDeduped) {
       prog.setText("下载中英对照…");
       try {
         const dualBytes = await downloadSideBySidePdf(base, key, jobId);
@@ -497,7 +534,7 @@ async function translateItem(job) {
     pw.startCloseTimer(3000);
   } catch (e) {
     Zotero.logError(e);
-    try { pw.cancel(); } catch (e2) {}
+    try { pw.close(); } catch (e2) {} // ProgressWindow 没有 cancel()，只有 close()
     popup("RetainPDF 翻译失败", e.message || String(e), 12000);
   }
 }
@@ -510,6 +547,9 @@ async function pump() {
   try {
     while (queue.length && !shuttingDown) {
       const job = queue.shift();
+      // 出队即释放去重标记：任务失败后允许再次右键重试，
+      // 处理中的并发去重由 processingParents 负责
+      queuedParents.delete(job.parentItemID);
       if (processingParents.has(job.parentItemID)) continue;
       processingParents.add(job.parentItemID);
       try {
@@ -523,11 +563,21 @@ async function pump() {
   }
 }
 
-async function enqueueItem(item) {
+function outputTitles() {
+  const titles = new Set();
+  titles.add(prefChar("attachTitle", "中文翻译 (RetainPDF)"));
+  titles.add(prefChar("dualTitle", "中英对照 (RetainPDF)"));
+  return titles;
+}
+
+async function enqueueItem(item, { force = false } = {}) {
   try {
     let parent = null;
     let attachment = null;
+    const ownTitles = outputTitles();
     if (item.isAttachment()) {
+      // 自己生成的译文/对照附件不作为翻译源，避免自我触发死循环
+      if (ownTitles.has(item.getField("title"))) return;
       attachment = item;
       const pid = item.parentItemID;
       if (!pid) return;
@@ -540,19 +590,23 @@ async function enqueueItem(item) {
     if (!parent || parent.deleted) return;
 
     const attachTitle = prefChar("attachTitle", "中文翻译 (RetainPDF)");
-    if (prefBool("skipExisting", true) && hasTranslatedAttachment(parent, attachTitle)) return;
+    if (!force && prefBool("skipExisting", true) && hasTranslatedAttachment(parent, attachTitle)) return;
     if (queuedParents.has(parent.id) || processingParents.has(parent.id)) return;
 
     if (!attachment) {
       let best = null;
       try { best = await parent.getBestAttachment(); } catch (e) { best = null; }
-      if (best && best.isAttachment() && best.attachmentContentType === "application/pdf") {
+      const pickable = (a) => a && a.isAttachment()
+        && a.attachmentContentType === "application/pdf"
+        && !a.deleted
+        && !ownTitles.has(a.getField("title"));
+      if (pickable(best)) {
         attachment = best;
       } else {
         const ids = parent.getAttachments();
         for (const id of ids) {
           const a = Zotero.Items.get(id);
-          if (a && a.isAttachment() && a.attachmentContentType === "application/pdf" && !a.deleted) {
+          if (pickable(a)) {
             attachment = a;
             break;
           }
@@ -600,26 +654,69 @@ function addMenusForWindow(win) {
     const mi = doc.createXULElement("menuitem");
     mi.id = "retainpdf-itemmenu-translate";
     mi.label = "RetainPDF 翻译全文并挂到条目";
-    mi.addEventListener("command", () => translateSelected(win));
+    mi.addEventListener("command", () => translateSelected(win, false));
+    const miRe = doc.createXULElement("menuitem");
+    miRe.id = "retainpdf-itemmenu-retranslate";
+    miRe.label = "RetainPDF 重新翻译（删除旧译文后重翻）";
+    miRe.addEventListener("command", () => translateSelected(win, true));
     itemMenu.appendChild(sep);
     itemMenu.appendChild(mi);
-    nodes.push(sep, mi);
+    itemMenu.appendChild(miRe);
+    nodes.push(sep, mi, miRe);
     injectedNodes.set(win, nodes);
   } catch (e) {
     Zotero.logError(e);
   }
 }
 
-function translateSelected(win) {
+// 重新翻译前，把本插件此前生成的译文附件移入回收站（可恢复）
+async function removeRetainPdfAttachments(parent) {
+  const ownTitles = outputTitles();
+  const removed = [];
+  for (const id of parent.getAttachments()) {
+    const att = Zotero.Items.get(id);
+    if (att && att.isAttachment() && ownTitles.has(att.getField("title")) && !att.deleted) {
+      await att.deleteTx();
+      removed.push(att.getField("title"));
+    }
+  }
+  return removed;
+}
+
+function translateSelected(win, force) {
   try {
     const zp = Zotero.getActiveZoteroPane();
     if (!zp) return;
     const items = zp.getSelectedItems() || [];
     if (!items.length) return;
-    for (const item of items) {
-      enqueueItem(item);
-    }
-    popup("RetainPDF 翻译", "已加入翻译队列（" + items.length + " 个条目），完成后译文会自动挂到条目下。", 4000);
+    (async () => {
+      let cleaned = 0;
+      for (const item of items) {
+        if (force) {
+          let parent = null;
+          if (item.isAttachment()) {
+            if (item.parentItemID) parent = await Zotero.Items.getAsync(item.parentItemID);
+          } else if (item.isRegularItem()) {
+            parent = item;
+          }
+          if (parent) {
+            const removed = await removeRetainPdfAttachments(parent);
+            cleaned += removed.length;
+          }
+        }
+        enqueueItem(item, { force: !!force });
+      }
+      popup(
+        "RetainPDF 翻译",
+        force
+          ? "已把 " + cleaned + " 个旧译文移入回收站，重新翻译已开始。"
+          : "已加入翻译队列（" + items.length + " 个条目），完成后译文会自动挂到条目下。",
+        4000,
+      );
+    })().catch((e) => {
+      Zotero.logError(e);
+      popup("RetainPDF 翻译失败", e.message || String(e), 8000);
+    });
   } catch (e) {
     Zotero.logError(e);
     popup("RetainPDF 翻译失败", e.message || String(e), 8000);

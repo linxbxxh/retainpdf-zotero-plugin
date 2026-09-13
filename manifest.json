@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "RetainPDF Translate",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "用 RetainPDF 本地服务自动翻译新抓取的 PDF 全文，并把译文 PDF 挂到对应条目下。",
   "author": "linxbxxh",
   "homepage_url": "https://github.com/linxbxxh/retainpdf-zotero-plugin",
