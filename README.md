@@ -97,6 +97,10 @@ irm https://raw.githubusercontent.com/linxbxxh/retainpdf-zotero-plugin/main/inst
   旧版本需要重启 Zotero 才能重试的问题已在 1.0.9 修复。
 - **提示无法连接本地服务**：打开 RetainPDF 桌面版（可最小化到托盘，本地 API 仍在），
   或在插件设置里指定 RetainPDF.exe 路径让插件自动拉起。
+- **弹「Another instance of the application is already running」**：RetainPDF 桌面版
+  是单实例应用，旧版插件在服务未启动时会并发拉起多个进程导致此弹窗（并卡住一个翻译
+  槽位）。1.1.1 已修复：只启动一次、且不再等待进程退出；如仍出现，说明有别的程序
+  在重复启动它，可在任务管理器结束多余 RetainPDF.exe。
 - **翻译失败**：看弹窗里的诊断信息；RetainPDF 主界面里也能看到对应任务日志。
 - **每篇文献要花多少钱**：走你自己在 RetainPDF 里配置的模型 API（DeepSeek 等），
   费用由该 API 按用量计费。

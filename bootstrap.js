@@ -64,6 +64,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/* 临时诊断：把插件内部决策写到文件，便于排查（正式版可移除） */
+var dbgFile = null;
+var dbgBuf = [];
+function dbg(msg) {
+  try {
+    Zotero.debug("[retainpdf] " + msg);
+    dbgBuf.push(new Date().toISOString() + "  " + msg);
+    if (!dbgFile) {
+      dbgFile = PathUtils.join(Zotero.DataDirectory.dir, "retainpdf-debug.log");
+    }
+    // 用普通写（覆盖），避免 append 模式兼容性问题
+    IOUtils.writeUTF8(dbgFile, dbgBuf.join("\n") + "\n").catch((e) => {
+      Zotero.debug("[retainpdf] dbg write failed: " + e);
+    });
+  } catch (e) { /* ignore */ }
+}
+
 function unwrapEnvelope(json) {
   if (json && typeof json === "object" && "code" in json && "data" in json) {
     if (json.code !== 0) throw new Error(json.message || ("API 返回 code=" + json.code));
@@ -161,15 +178,69 @@ async function findRetainPDFExe() {
   return "";
 }
 
+/* RetainPDF 桌面版是 Electron 应用，带单实例锁：已经在运行时再启动一次，
+ * 进程会立刻退出并弹系统对话框「Another instance of the application is already running.」。
+ * 因此并发翻译（或用户自己已开着窗口）时绝不能再拉一次进程。
+ *
+ * 另一个关键点：Zotero.Utilities.Internal.exec 的 Promise 要等被启动进程“退出”才
+ * resolve（utilities_internal.js 里 runwAsync + process-finished）。RetainPDF 是常驻
+ * GUI 应用，await 它等于挂起整个翻译任务直到 RetainPDF 关闭。所以这里绝对不能
+ * await exec —— 发射后不管，就绪与否交给 waitForHealth 轮询判断。 */
+var lastLaunchAt = 0;
+
+// 返回 true 表示“本次调用真的去启动了进程”，冷却期内的调用方返回 false
 async function tryLaunchRetainPDF() {
+  // 同步检查并占位，防止并发任务在同一瞬间各自通过检查
+  if (Date.now() - lastLaunchAt < 120000) return false;
+  lastLaunchAt = Date.now();
   const exe = await findRetainPDFExe();
-  if (!exe) return false;
+  if (!exe) {
+    lastLaunchAt = 0; // 没找到可执行文件时不占冷却期，便于用户修好路径后重试
+    return false;
+  }
   try {
-    await Zotero.Utilities.Internal.exec(exe, []);
+    Zotero.Utilities.Internal.exec(exe, []).catch((e) => {
+      // 单实例锁撞车 / 启动失败等都会以非 0 退出码走到这里，仅记录
+      Zotero.debug("[retainpdf] launch process exited: " + (e.message || e));
+    });
     return true;
   } catch (e) {
     Zotero.logError(e);
     return false;
+  }
+}
+
+/* importFromFile 内部走 Zotero.DB.executeTransaction（DB 事务锁 + 建 storage 目录）。
+ * 并发翻译时多个任务同时挂附件会争同一把事务锁，一旦抛错，译文虽然已在后端生成，
+ * 附件却会永久丢失（旧代码只在 catch 里弹窗，不重试）。
+ * 这里把“挂附件”串行化，并对瞬时错误重试。 */
+var attachChain = Promise.resolve();
+var attachFailCount = 0;
+
+async function attachFileSerialized(file, parentItemID, title) {
+  const prev = attachChain;
+  let release;
+  attachChain = new Promise((r) => { release = r; });
+  await prev;
+  try {
+    const maxAttempts = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await Zotero.Attachments.importFromFile({
+          file, parentItemID, title, contentType: "application/pdf",
+        });
+      } catch (e) {
+        lastErr = e;
+        Zotero.debug("[retainpdf] attach attempt " + attempt + "/" + maxAttempts
+          + " failed for " + title + ": " + (e && e.message ? e.message : e));
+        if (attempt < maxAttempts) await sleep(1500 * attempt);
+      }
+    }
+    attachFailCount++;
+    throw lastErr || new Error("挂附件失败: " + title);
+  } finally {
+    release();
   }
 }
 
@@ -407,7 +478,6 @@ async function translateItem(job) {
     popup("RetainPDF 翻译跳过", "条目「" + (parent.getField("title") || "") + "」的 PDF 不是本地文件（可能只是链接），已跳过。", 8000);
     return;
   }
-
   const pw = new Zotero.ProgressWindow({ closeOnClick: false });
   pw.changeHeadline("RetainPDF 翻译" + (queue.length > 0 ? "（队列中还有 " + queue.length + " 篇）" : ""));
   pw.show();
@@ -417,10 +487,20 @@ async function translateItem(job) {
 
   try {
     if (!(await checkHealth(base))) {
-      prog.setText("正在启动 RetainPDF…");
-      await tryLaunchRetainPDF();
+      // 只在这次调用真的拉起了进程时提示“正在启动”，已有实例的并发任务直接等它
+      const launched = await tryLaunchRetainPDF();
+      prog.setText(launched ? "正在启动 RetainPDF…" : "等待 RetainPDF 服务就绪…");
       if (!(await waitForHealth(base, 120))) {
-        throw new Error("无法连接 RetainPDF 本地服务 (" + base + ")。请先打开 RetainPDF 桌面版（可最小化到托盘），或在插件设置中检查服务地址与 RetainPDF.exe 路径。");
+        const hasExe = !!(await findRetainPDFExe());
+        throw new Error(
+          "无法连接 RetainPDF 本地服务 (" + base + ")。"
+          + (hasExe
+            // 进程在、端口不通：多为实例卡死或单实例锁残留，需重开应用
+            ? "RetainPDF 似乎已在运行但本地服务无响应（可能上次退出不干净）。"
+              + "请手动完全退出并重新打开 RetainPDF 桌面版；"
+              + "若反复出现，可在任务管理器结束所有 RetainPDF.exe 后重开。"
+            : "未找到 RetainPDF.exe，请在插件设置中填写程序路径。")
+        );
       }
     }
 
@@ -436,6 +516,7 @@ async function translateItem(job) {
     } catch (e) {
       // 网络抖动等瞬时错误重试一次（413 等永久错误重试也只是多花几秒）
       Zotero.debug("[retainpdf] upload failed once, retrying: " + (e.message || e));
+      dbg("translateItem: upload failed once parent=" + parent.id + " err=" + (e.message || e));
       prog.setText("上传失败，3 秒后重试…");
       await sleep(3000);
       if (shuttingDown) return;
@@ -512,12 +593,7 @@ async function translateItem(job) {
 
     prog.setText("挂到条目下…");
     prog.setProgress(98);
-    await Zotero.Attachments.importFromFile({
-      file: tmpPath,
-      parentItemID: parent.id,
-      title: attachTitle,
-      contentType: "application/pdf",
-    });
+    await attachFileSerialized(tmpPath, parent.id, attachTitle);
     IOUtils.remove(tmpPath, { ignoreMissing: true }).catch(() => {});
 
     // 中英对照版（A3 横版，左原文右译文）；去重跟随 skipExisting 语义
@@ -529,12 +605,7 @@ async function translateItem(job) {
         const dualBytes = await downloadSideBySidePdf(base, key, jobId);
         const dualPath = PathUtils.join(tmpDir, "zh.dual_" + stem + ".pdf");
         await IOUtils.write(dualPath, dualBytes);
-        await Zotero.Attachments.importFromFile({
-          file: dualPath,
-          parentItemID: parent.id,
-          title: dualTitle,
-          contentType: "application/pdf",
-        });
+        await attachFileSerialized(dualPath, parent.id, dualTitle);
         IOUtils.remove(dualPath, { ignoreMissing: true }).catch(() => {});
       } catch (e) {
         // 对照版失败不影响主译文
@@ -548,8 +619,13 @@ async function translateItem(job) {
     pw.startCloseTimer(3000);
   } catch (e) {
     Zotero.logError(e);
+    dbg("translateItem: ERROR parent=" + job.parentItemID + " msg=" + (e && e.message ? e.message : String(e))
+      + " stack=" + (e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : ""));
     try { pw.close(); } catch (e2) {} // ProgressWindow 没有 cancel()，只有 close()
-    popup("RetainPDF 翻译失败", e.message || String(e), 12000);
+    // 带上条目标题，便于在批量翻译时定位是哪一篇失败
+    let who = "";
+    try { who = "「" + (parent.getField("title") || "").slice(0, 40) + "」"; } catch (e2) {}
+    popup("RetainPDF 翻译失败" + who, e.message || String(e), 12000);
   }
 }
 
@@ -608,8 +684,12 @@ async function enqueueItem(item, { force = false } = {}) {
     if (!parent || parent.deleted) return;
 
     const attachTitle = prefChar("attachTitle", "中文翻译 (RetainPDF)");
-    if (!force && prefBool("skipExisting", true) && hasTranslatedAttachment(parent, attachTitle)) return;
-    if (queuedParents.has(parent.id) || processingParents.has(parent.id)) return;
+    if (!force && prefBool("skipExisting", true) && hasTranslatedAttachment(parent, attachTitle)) {
+      return;
+    }
+    if (queuedParents.has(parent.id) || processingParents.has(parent.id)) {
+      return;
+    }
 
     if (!attachment) {
       let best = null;
