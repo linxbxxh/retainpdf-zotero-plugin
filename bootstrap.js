@@ -669,18 +669,22 @@ function addMenusForWindow(win) {
   }
 }
 
-// 重新翻译前，把本插件此前生成的译文附件移入回收站（可恢复）
+// 重新翻译前，把本插件此前生成的译文附件移入回收站（可恢复）。
+// Zotero 9 的 Item 没有 deleteTx；官方 UI（itemTree.js 等）删除条目用的就是
+// Zotero.Items.trashTx(ids)——入回收站、同步安全、发 'trash' 通知。
 async function removeRetainPdfAttachments(parent) {
   const ownTitles = outputTitles();
-  const removed = [];
+  const ids = [];
   for (const id of parent.getAttachments()) {
     const att = Zotero.Items.get(id);
     if (att && att.isAttachment() && ownTitles.has(att.getField("title")) && !att.deleted) {
-      await att.deleteTx();
-      removed.push(att.getField("title"));
+      ids.push(id);
     }
   }
-  return removed;
+  if (ids.length) {
+    await Zotero.Items.trashTx(ids);
+  }
+  return ids.length;
 }
 
 function translateSelected(win, force) {
@@ -700,8 +704,7 @@ function translateSelected(win, force) {
             parent = item;
           }
           if (parent) {
-            const removed = await removeRetainPdfAttachments(parent);
-            cleaned += removed.length;
+            cleaned += await removeRetainPdfAttachments(parent);
           }
         }
         enqueueItem(item, { force: !!force });
