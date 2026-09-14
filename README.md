@@ -9,6 +9,9 @@ RetainPDF 的本地翻译服务（OCR → 全文翻译 → Typst 排版渲染）
 
 ## ⚡ 快速部署（约 5 分钟）
 
+> 在**另一台 Windows 电脑**上部署？看 [DEPLOY.md](./DEPLOY.md)——一条 PowerShell 命令
+> 自动定位 Zotero / 检测 RetainPDF / 下载最新 xpi，并列出换机后必须单独确认的凭证与路径。
+
 ### 前提（只装一次）
 
 | 软件 | 作用 | 获取 |
